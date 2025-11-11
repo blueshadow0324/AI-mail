@@ -1,29 +1,32 @@
-import os
+import streamlit as st
 import re
 import html
-import streamlit as st
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from transformers import pipeline
 
+st.set_page_config(page_title="GBS", page_icon="")
 st.title("GBS AI")
 
-# Gmail API scope
-SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+# -------------------- CONFIG --------------------
+SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-# ---------- Summarizer ----------
+# OAuth credentials from Streamlit Secrets
+CLIENT_ID = st.secrets["google"]["client_id"]
+CLIENT_SECRET = st.secrets["google"]["client_secret"]
+REDIRECT_URI = st.secrets["google"]["redirect_uri"]
+
+# -------------------- SUMMARIZER --------------------
 @st.cache_resource
 def load_summarizer():
-    pipeline("summarization", model="facebook/bart-large-cnn")
-
+    return pipeline("summarization", model="facebook/bart-large-cnn")
 
 summarizer = load_summarizer()
 
-# ---------- Utility Functions ----------
+# -------------------- UTILITY FUNCTIONS --------------------
 def clean_text(text):
-    """Clean and normalize text, remove HTML entities and Swedish letters."""
+    """Clean text: remove HTML entities and Swedish letters."""
     text = html.unescape(text)
     replacements = {"å":"a","ä":"a","ö":"o","Å":"A","Ä":"A","Ö":"O"}
     for k,v in replacements.items():
@@ -33,16 +36,16 @@ def clean_text(text):
     return text
 
 def split_sentences(text):
-    """Split text into sentences using punctuation (no NLTK needed)."""
+    """Split text into sentences using punctuation."""
     sentences = re.split(r'[.!?]\s+', text)
     return [s.strip() for s in sentences if len(s.strip()) > 3]
 
 def generate_bullet_summary(text):
-    """Generate simple bullet-point summary without heavy model calls."""
+    """Generate bullet summary using keywords and optional model."""
     cleaned = clean_text(text)
     sentences = split_sentences(cleaned)
 
-    # Ignore marketing or filler lines
+    # Ignore marketing/filler lines
     ignore_patterns = [
         r"don't take our word", r"look inside", r"unsubscribe",
         r"click here", r"view in your browser", r"follow us",
@@ -51,73 +54,78 @@ def generate_bullet_summary(text):
         r"tjanster", r"jobb"
     ]
 
-    filtered = []
-    for s in sentences:
-        if any(re.search(p, s, re.IGNORECASE) for p in ignore_patterns):
-            continue
-        if len(s.split()) < 4:
-            continue
-        filtered.append(s)
+    filtered = [s for s in sentences if not any(re.search(p, s, re.IGNORECASE) for p in ignore_patterns)]
+    filtered = [s for s in filtered if len(s.split()) >= 4]
 
-    # If no good sentences, return notice
     if not filtered:
         return "- No meaningful content found."
 
-    # Extract likely important sentences
+    # Filter important sentences based on keywords
     keywords = ["update", "invite", "security", "order", "jobb", "job", "kund", "client"]
     important = [s for s in filtered if any(k in s.lower() for k in keywords)]
 
-    # If nothing matched, just take first few sentences
     if not important:
-        important = filtered[:5]
+        important = filtered[:5]  # fallback to first few sentences
 
-    bullets = [f"- {s.strip()}" for s in important]
+    # Optional: summarize with model (commented if you want faster response)
+    bullets = []
+    for s in important:
+        try:
+            result = summarizer(s, max_length=30, min_length=5, do_sample=False)[0]["summary_text"]
+            bullets.append(f"- {result}")
+        except:
+            bullets.append(f"- {s.strip()}")
     return "\n".join(bullets)
 
+# -------------------- GOOGLE OAUTH --------------------
+if "creds" not in st.session_state:
+    st.session_state.creds = None
 
+if st.session_state.creds is None:
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token"
+            }
+        },
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
+    st.markdown(f"[Login with Google]({auth_url})")
+    code = st.text_input("Enter the code from Google here:")
 
+    if code:
+        flow.fetch_token(code=code)
+        st.session_state.creds = flow.credentials
+        st.success("Login successful!")
 
-def get_emails(max_results=10):
-    """Fetch latest Gmail messages with cached OAuth token."""
-    creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        # Save credentials for future use
-        with open('token.json', 'w') as token_file:
-            token_file.write(creds.to_json())
-
-    service = build('gmail', 'v1', credentials=creds)
-    results = service.users().messages().list(userId='me', maxResults=max_results).execute()
-    messages = results.get('messages', [])
+# -------------------- EMAIL FETCH --------------------
+def get_emails_with_creds(creds, max_results=10):
+    """Fetch Gmail snippets using OAuth credentials."""
+    service = build("gmail", "v1", credentials=creds)
+    results = service.users().messages().list(userId="me", maxResults=max_results).execute()
+    messages = results.get("messages", [])
 
     emails_text = ""
     for i, msg in enumerate(messages, 1):
-        msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
-        snippet = msg_data.get('snippet', '')
+        msg_data = service.users().messages().get(userId="me", id=msg["id"]).execute()
+        snippet = msg_data.get("snippet", "")
         emails_text += f"{i}. {snippet}\n"
     return emails_text
 
-# ---------- Streamlit UI ----------
-max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
-loading = st.empty()
-
-if st.button("Fetch & Generate Bullet Summary"):
-    emails_text = get_emails(max_results=max_emails)
-    if not emails_text.strip():
-        st.info("No emails found.")
-    else:
-        loading.text("Loading...")
+# -------------------- STREAMLIT UI --------------------
+if st.session_state.creds:
+    max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
+    if st.button("Fetch & Generate Bullet Summary"):
+        loading = st.empty()
+        loading.text("Fetching emails...")
+        emails_text = get_emails_with_creds(st.session_state.creds, max_results=max_emails)
+        loading.text("Generating bullet summary...")
         bullet_summary = generate_bullet_summary(emails_text)
-        if not bullet_summary:
-            loading.empty()
-            st.info("Could not generate bullet summary. Text may be too short or noisy.")
-        else:
-            loading.empty()
-            st.subheader("📌 Important Highlights:")
-            st.text(bullet_summary)
+        loading.empty()
+        st.subheader("Important Highlights:")
+        st.text(bullet_summary)
