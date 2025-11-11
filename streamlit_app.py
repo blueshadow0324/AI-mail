@@ -16,7 +16,8 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 # ---------- Summarizer ----------
 @st.cache_resource
 def load_summarizer():
-    return pipeline("summarization", model="t5-small")
+    pipeline("summarization", model="facebook/bart-large-cnn")
+
 
 summarizer = load_summarizer()
 
@@ -37,38 +38,43 @@ def split_sentences(text):
     return [s.strip() for s in sentences if len(s.strip()) > 3]
 
 def generate_bullet_summary(text):
-    """Generate bullet-point summary from cleaned email text, ignoring filler sentences."""
+    """Generate simple bullet-point summary without heavy model calls."""
     cleaned = clean_text(text)
     sentences = split_sentences(cleaned)
 
-    # Filter out meaningless sentences
+    # Ignore marketing or filler lines
     ignore_patterns = [
-        r"don't take our word",
-        r"look inside \d+",
-        r"the tale continues",
-        r"join \d+",
-        r"see what",
-        r"click here",
-        r"view in your browser"
+        r"don't take our word", r"look inside", r"unsubscribe",
+        r"click here", r"view in your browser", r"follow us",
+        r"shop now", r"the tale continues", r"join",
+        r"offer", r"discount", r"sale", r"terms and service",
+        r"tjanster", r"jobb"
     ]
 
-    filtered_sentences = []
+    filtered = []
     for s in sentences:
-        if any(re.search(pattern, s, re.IGNORECASE) for pattern in ignore_patterns):
+        if any(re.search(p, s, re.IGNORECASE) for p in ignore_patterns):
             continue
-        if len(s.split()) < 4:  # skip very short fragments
+        if len(s.split()) < 4:
             continue
-        filtered_sentences.append(s)
+        filtered.append(s)
 
-    bullets = []
-    for s in filtered_sentences:
-        try:
-            result = summarizer("summarize: " + s, max_length=30, min_length=5, do_sample=False)
-            bullet = result[0]['summary_text']
-            bullets.append(f"- {bullet}")
-        except:
-            continue
+    # If no good sentences, return notice
+    if not filtered:
+        return "- No meaningful content found."
+
+    # Extract likely important sentences
+    keywords = ["update", "invite", "security", "order", "jobb", "job", "kund", "client"]
+    important = [s for s in filtered if any(k in s.lower() for k in keywords)]
+
+    # If nothing matched, just take first few sentences
+    if not important:
+        important = filtered[:5]
+
+    bullets = [f"- {s.strip()}" for s in important]
     return "\n".join(bullets)
+
+
 
 
 def get_emails(max_results=10):
@@ -99,15 +105,19 @@ def get_emails(max_results=10):
 
 # ---------- Streamlit UI ----------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
+loading = st.empty()
 
 if st.button("Fetch & Generate Bullet Summary"):
     emails_text = get_emails(max_results=max_emails)
     if not emails_text.strip():
         st.info("No emails found.")
     else:
+        loading.text("Loading...")
         bullet_summary = generate_bullet_summary(emails_text)
         if not bullet_summary:
+            loading.empty()
             st.info("Could not generate bullet summary. Text may be too short or noisy.")
         else:
+            loading.empty()
             st.subheader("📌 Important Highlights:")
             st.text(bullet_summary)
