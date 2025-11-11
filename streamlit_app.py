@@ -102,7 +102,7 @@ if st.session_state.creds is None:
         code = query_params["code"][0]  # Google auth code
         flow.fetch_token(code=code)
         st.session_state.creds = flow.credentials
-        st.success("✅ Login successful!")
+        st.success("Login successful!")
 
 # -------------------- EMAIL FETCH --------------------
 def get_emails_with_creds(creds, max_results=10):
