@@ -6,6 +6,12 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from transformers import pipeline
 
+if "google_creds" not in st.session_state:
+    st.session_state.google_creds = None
+
+if "ms_access_token" not in st.session_state:
+    st.session_state.ms_access_token = None
+
 st.set_page_config(page_title="GBS", page_icon="")
 st.title("GBS AI")
 
