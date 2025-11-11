@@ -96,12 +96,13 @@ if st.session_state.creds is None:
     )
     auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
     st.markdown(f"[Login with Google]({auth_url})")
-    code = st.text_input("Enter the code from Google here:")
 
-    if code:
+    query_params = st.experimental_get_query_params()
+    if "code" in query_params:
+        code = query_params["code"][0]  # Google auth code
         flow.fetch_token(code=code)
         st.session_state.creds = flow.credentials
-        st.success("Login successful!")
+        st.success("✅ Login successful!")
 
 # -------------------- EMAIL FETCH --------------------
 def get_emails_with_creds(creds, max_results=10):
