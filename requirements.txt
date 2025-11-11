@@ -1,7 +1,9 @@
-streamlit
-google-api-python-client
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-transformers
-torch
+streamlit==1.26.0
+google-auth==2.23.0
+google-auth-oauthlib==1.0.0
+google-api-python-client==2.89.0
+transformers==4.42.2
+torch==2.1.0
+msal==1.25.0
+requests==2.31.0
+html5lib==1.1

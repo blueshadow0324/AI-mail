@@ -9,6 +9,8 @@ from transformers import pipeline
 st.set_page_config(page_title="GBS", page_icon="")
 st.title("GBS AI")
 
+login_choice = st.radio("Login with:", ["Google", "Microsoft"])
+
 # -------------------- CONFIG --------------------
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
@@ -16,6 +18,8 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 CLIENT_ID = st.secrets["google"]["client_id"]
 CLIENT_SECRET = st.secrets["google"]["client_secret"]
 REDIRECT_URI = st.secrets["google"]["redirect_uri"]
+
+TENANT_ID = st.secrets["microsoft"]["tenant_id"]  # or "common" for multi-tenant
 
 # -------------------- SUMMARIZER --------------------
 @st.cache_resource
@@ -81,7 +85,7 @@ def generate_bullet_summary(text):
 if "creds" not in st.session_state:
     st.session_state.creds = None
 
-if st.session_state.creds is None:
+if login_choice == "Google" and st.session_state.google_creds is None:
     flow = Flow.from_client_config(
         {
             "web": {
@@ -118,15 +122,65 @@ def get_emails_with_creds(creds, max_results=10):
         emails_text += f"{i}. {snippet}\n"
     return emails_text
 
+import requests
+
+def get_microsoft_emails(max_results=10):
+    headers = {"Authorization": f"Bearer {st.session_state.ms_access_token}"}
+    url = f"https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages?$top={max_results}&$select=subject,bodyPreview"
+    response = requests.get(url, headers=headers)
+    emails = response.json().get("value", [])
+    emails_text = ""
+    for i, e in enumerate(emails, 1):
+        emails_text += f"{i}. {e.get('subject','')}: {e.get('bodyPreview','')}\n"
+    return emails_text
+
+#---------------------Microsoft AUTH--------------------
+
+if "ms_access_token" not in st.session_state:
+    st.session_state.ms_access_token = None
+
+if login_choice == "Microsoft" and st.session_state.ms_access_token is None:
+    from msal import ConfidentialClientApplication
+
+    msal_app = ConfidentialClientApplication(
+        CLIENT_ID, authority=f"https://login.microsoftonline.com/{TENANT_ID}", client_credential=CLIENT_SECRET
+    )
+
+    auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
+    st.markdown(f"[Login with Microsoft]({auth_url})")
+
+    # Capture code automatically from URL
+    query_params = st.experimental_get_query_params()
+    if "code" in query_params and st.session_state.ms_access_token is None:
+        code = query_params["code"][0]
+        result = msal_app.acquire_token_by_authorization_code(code, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+        if "access_token" in result:
+            st.session_state.ms_access_token = result["access_token"]
+            st.success("✅ Microsoft login successful!")
+        else:
+            st.error(f"Login failed: {result.get('error_description')}")
+
+
+
 # -------------------- STREAMLIT UI --------------------
 if st.session_state.creds:
     max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
     if st.button("Fetch & Generate Bullet Summary"):
         loading = st.empty()
         loading.text("Fetching emails...")
-        emails_text = get_emails_with_creds(st.session_state.creds, max_results=max_emails)
-        loading.text("Generating bullet summary...")
-        bullet_summary = generate_bullet_summary(emails_text)
-        loading.empty()
-        st.subheader("Important Highlights:")
-        st.text(bullet_summary)
+
+        if login_choice == "Google" and st.session_state.creds:
+            emails_text = get_emails_with_creds(st.session_state.creds, max_results=max_emails)
+        elif login_choice == "Microsoft" and st.session_state.ms_access_token:
+            emails_text = get_microsoft_emails(max_results=max_emails)
+        else:
+            st.warning("Please log in first!")
+            emails_text = ""
+
+        if emails_text:
+            loading.text("Generating bullet summary...")
+            bullet_summary = generate_bullet_summary(emails_text)
+            loading.empty()
+            st.subheader("Important Highlights:")
+            st.text(bullet_summary)
+
