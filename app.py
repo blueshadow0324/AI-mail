@@ -2,9 +2,11 @@ import streamlit as st
 import re
 import html
 import requests
+from transformers import pipeline
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
-from transformers import pipeline
+from google.auth.transport.requests import Request
+from msal import ConfidentialClientApplication
 
 st.set_page_config(page_title="GBS AI", page_icon="")
 st.title("GBS AI")
@@ -71,14 +73,10 @@ def generate_bullet_summary(text):
 
 # -------------------- GOOGLE OAUTH --------------------
 if login_choice == "Google":
-    from google.auth.transport.requests import Request
     if "google_creds" not in st.session_state:
         st.session_state.google_creds = None
 
     if st.session_state.google_creds is None:
-        # Clear any old query params
-        st.experimental_set_query_params()
-
         flow = Flow.from_client_config(
             {
                 "web": {
@@ -88,7 +86,7 @@ if login_choice == "Google":
                     "token_uri": "https://oauth2.googleapis.com/token",
                 }
             },
-            scopes=GOOGLE_SCOPES,
+            scopes=SCOPES,
             redirect_uri=REDIRECT_URI,
         )
 
@@ -97,52 +95,47 @@ if login_choice == "Google":
         )
         st.markdown(f"[Login with Google]({auth_url})")
 
-        query_params = st.experimental_get_query_params()
-        if "code" in query_params:
-            code = query_params["code"][0]
+        code_input = st.text_input("Paste the Google auth code here:")
+        if code_input:
             try:
-                flow.fetch_token(code=code)
+                flow.fetch_token(code=code_input)
                 st.session_state.google_creds = flow.credentials
                 st.success("✅ Google login successful!")
-                # Clear query params after successful login
-                st.experimental_set_query_params()
             except Exception as e:
                 st.error(f"⚠️ Google login failed: {e}")
                 st.stop()
 
-# -------------------- MICROSOFT OAUTH (Streamlit-safe) --------------------
-from msal import ConfidentialClientApplication
+    def get_google_emails(creds, max_results=10):
+        service = build("gmail", "v1", credentials=creds)
+        results = service.users().messages().list(userId="me", maxResults=max_results).execute()
+        messages = results.get("messages", [])
+        emails_text = ""
+        for i, msg in enumerate(messages, 1):
+            msg_data = service.users().messages().get(userId="me", id=msg["id"]).execute()
+            snippet = msg_data.get("snippet", "")
+            emails_text += f"{i}. {snippet}\n"
+        return emails_text
 
-if login_choice == "Microsoft":
-    # Initialize session state
+# -------------------- MICROSOFT OAUTH --------------------
+elif login_choice == "Microsoft":
     if "ms_access_token" not in st.session_state:
         st.session_state.ms_access_token = None
-    if "ms_auth_code" not in st.session_state:
-        st.session_state.ms_auth_code = None
 
-    msal_app = ConfidentialClientApplication(
-        client_id=CLIENT_ID,
-        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
-        client_credential=CLIENT_SECRET,
-    )
-
-    # 1️⃣ Get auth code from query parameters if exists
-    query_params = st.experimental_get_query_params()
-    if "code" in query_params and st.session_state.ms_auth_code is None:
-        st.session_state.ms_auth_code = query_params["code"][0]
-
-    # 2️⃣ If no auth code yet, show login link
-    if st.session_state.ms_auth_code is None:
-        auth_url = msal_app.get_authorization_request_url(
-            SCOPES,
-            redirect_uri=REDIRECT_URI
+    if st.session_state.ms_access_token is None:
+        msal_app = ConfidentialClientApplication(
+            CLIENT_ID,
+            authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+            client_credential=CLIENT_SECRET
         )
-        st.markdown(f"[Login with Microsoft]({auth_url})")
-    else:
-        # 3️⃣ Exchange auth code for access token (only once)
-        if st.session_state.ms_access_token is None:
+
+        st.markdown("### Step 1: Login with Microsoft")
+        auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
+        st.markdown(f"[Click here to login with Microsoft]({auth_url})")
+
+        code_input = st.text_input("Step 2: Paste the Microsoft auth code here:")
+        if code_input:
             result = msal_app.acquire_token_by_authorization_code(
-                st.session_state.ms_auth_code,
+                code_input,
                 scopes=SCOPES,
                 redirect_uri=REDIRECT_URI
             )
@@ -152,11 +145,20 @@ if login_choice == "Microsoft":
             else:
                 st.error(f"Microsoft login failed: {result.get('error_description')}")
 
+    def get_microsoft_emails(max_results=10):
+        headers = {"Authorization": f"Bearer {st.session_state.ms_access_token}"}
+        url = f"https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages?$top={max_results}&$select=subject,bodyPreview"
+        response = requests.get(url, headers=headers)
+        emails = response.json().get("value", [])
+        emails_text = ""
+        for i, e in enumerate(emails, 1):
+            emails_text += f"{i}. {e.get('subject','')}: {e.get('bodyPreview','')}\n"
+        return emails_text
 
-# -------------------- UI --------------------
+# -------------------- STREAMLIT UI --------------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
 
-if st.button("Fetch & Generate Summary"):
+if st.button("Fetch & Generate Bullet Summary"):
     loading = st.empty()
     loading.text("Fetching emails...")
 
@@ -170,7 +172,7 @@ if st.button("Fetch & Generate Summary"):
 
     if emails_text:
         loading.text("Generating bullet summary...")
-        summary = generate_bullet_summary(emails_text)
+        bullet_summary = generate_bullet_summary(emails_text)
         loading.empty()
-        st.subheader("Important Highlights:")
-        st.text(summary)
+        st.subheader("📌 Important Highlights:")
+        st.text(bullet_summary)
