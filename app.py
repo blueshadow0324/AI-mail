@@ -126,7 +126,7 @@ if login_choice == "Microsoft" and st.session_state.ms_access_token is None:
     msal_app = ConfidentialClientApplication(
         CLIENT_ID, authority=f"https://login.microsoftonline.com/{TENANT_ID}", client_credential=CLIENT_SECRET
     )
-    auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
+    auth_url = msal_app.get_authorization_request_url(scopes, redirect_uri=REDIRECT_URI)
     st.markdown(f"[Login with Microsoft]({auth_url})")
     query_params = st.experimental_get_query_params()
     if "code" in query_params and st.session_state.ms_access_token is None:
