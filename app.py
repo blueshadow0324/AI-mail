@@ -2,10 +2,9 @@ import streamlit as st
 import re
 import html
 import requests
-from transformers import pipeline
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
-from google.auth.transport.requests import Request
+from transformers import pipeline
 from msal import ConfidentialClientApplication
 
 st.set_page_config(page_title="GBS AI", page_icon="")
@@ -17,6 +16,7 @@ MS_SCOPES = ["https://graph.microsoft.com/Mail.Read"]
 
 login_choice = st.radio("Login with:", ["Google", "Microsoft"])
 
+# Load secrets
 if login_choice == "Google":
     CLIENT_ID = st.secrets["google"]["client_id"]
     CLIENT_SECRET = st.secrets["google"]["client_secret"]
@@ -77,6 +77,7 @@ if login_choice == "Google":
         st.session_state.google_creds = None
 
     if st.session_state.google_creds is None:
+        # Create flow
         flow = Flow.from_client_config(
             {
                 "web": {
@@ -91,19 +92,21 @@ if login_choice == "Google":
         )
 
         auth_url, _ = flow.authorization_url(
-            prompt="consent", access_type="offline", include_granted_scopes="true"
+            prompt="consent",
+            access_type="offline",
+            include_granted_scopes="true"
         )
         st.markdown(f"[Login with Google]({auth_url})")
 
-        code_input = st.text_input("Paste the Google auth code here:")
-        if code_input:
+        # Manual auth code input
+        auth_code = st.text_input("Paste the Google auth code here:")
+        if auth_code:
             try:
-                flow.fetch_token(code=code_input)
+                flow.fetch_token(code=auth_code)
                 st.session_state.google_creds = flow.credentials
                 st.success("✅ Google login successful!")
             except Exception as e:
-                st.error(f"⚠️ Google login failed: {e}")
-                st.stop()
+                st.error(f"Google login failed: {e}")
 
     def get_google_emails(creds, max_results=10):
         service = build("gmail", "v1", credentials=creds)
@@ -125,20 +128,15 @@ elif login_choice == "Microsoft":
         msal_app = ConfidentialClientApplication(
             CLIENT_ID,
             authority=f"https://login.microsoftonline.com/{TENANT_ID}",
-            client_credential=CLIENT_SECRET
+            client_credential=CLIENT_SECRET,
         )
-
-        st.markdown("### Step 1: Login with Microsoft")
         auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
-        st.markdown(f"[Click here to login with Microsoft]({auth_url})")
+        st.markdown(f"[Login with Microsoft]({auth_url})")
 
-        code_input = st.text_input("Step 2: Paste the Microsoft auth code here:")
-        if code_input:
-            result = msal_app.acquire_token_by_authorization_code(
-                code_input,
-                scopes=SCOPES,
-                redirect_uri=REDIRECT_URI
-            )
+        # Manual auth code input
+        auth_code = st.text_input("Paste the Microsoft auth code here:")
+        if auth_code:
+            result = msal_app.acquire_token_by_authorization_code(auth_code, scopes=SCOPES, redirect_uri=REDIRECT_URI)
             if "access_token" in result:
                 st.session_state.ms_access_token = result["access_token"]
                 st.success("✅ Microsoft login successful!")
@@ -158,7 +156,7 @@ elif login_choice == "Microsoft":
 # -------------------- STREAMLIT UI --------------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
 
-if st.button("Fetch & Generate Bullet Summary"):
+if st.button("Fetch & Generate Summary"):
     loading = st.empty()
     loading.text("Fetching emails...")
 
@@ -172,7 +170,7 @@ if st.button("Fetch & Generate Bullet Summary"):
 
     if emails_text:
         loading.text("Generating bullet summary...")
-        bullet_summary = generate_bullet_summary(emails_text)
+        summary = generate_bullet_summary(emails_text)
         loading.empty()
         st.subheader("📌 Important Highlights:")
-        st.text(bullet_summary)
+        st.text(summary)
