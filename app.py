@@ -129,20 +129,20 @@ elif login_choice == "Microsoft":
         auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
         st.markdown(f"[Login with Microsoft]({auth_url})")
 
-        query_params = st.experimental_get_query_params()
-        if "code" in query_params:
-            code = query_params["code"][0]
-            result = msal_app.acquire_token_by_authorization_code(
-                code, scopes=SCOPES, redirect_uri=REDIRECT_URI
-            )
-            if "access_token" in result:
-                st.session_state.ms_access_token = result["access_token"]
-                st.success("✅ Microsoft login successful!")
-                # Clear query params after successful login
-                st.experimental_set_query_params()
-            else:
-                st.error(f"⚠️ Microsoft login failed: {result.get('error_description')}")
-                st.stop()
+query_params = st.experimental_get_query_params()
+if "code" in query_params and "ms_auth_code" not in st.session_state:
+    st.session_state.ms_auth_code = query_params["code"][0]
+
+# Then use the stored code to acquire token
+if st.session_state.ms_auth_code and st.session_state.ms_access_token is None:
+    result = msal_app.acquire_token_by_authorization_code(
+        st.session_state.ms_auth_code, scopes=SCOPES, redirect_uri=REDIRECT_URI
+    )
+    if "access_token" in result:
+        st.session_state.ms_access_token = result["access_token"]
+        st.success("Microsoft login successful!")
+    else:
+        st.error(f"Microsoft login failed: {result.get('error_description')}")
 
 
 # -------------------- UI --------------------
