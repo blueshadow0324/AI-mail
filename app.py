@@ -111,38 +111,48 @@ if login_choice == "Google":
                 st.stop()
 
 # -------------------- MICROSOFT OAUTH --------------------
-elif login_choice == "Microsoft":
-    from msal import ConfidentialClientApplication
-    if "ms_access_token" not in st.session_state:
-        st.session_state.ms_access_token = None
+from msal import ConfidentialClientApplication
 
-    if st.session_state.ms_access_token is None:
-        # Clear any old query params
-        st.experimental_set_query_params()
+# Initialize session state variables
+if "ms_auth_code" not in st.session_state:
+    st.session_state.ms_auth_code = None
+if "ms_access_token" not in st.session_state:
+    st.session_state.ms_access_token = None
 
-        msal_app = ConfidentialClientApplication(
-            CLIENT_ID,
-            authority=f"https://login.microsoftonline.com/{TENANT_ID}",
-            client_credential=CLIENT_SECRET,
+# Only run if user selected Microsoft login
+if login_choice == "Microsoft":
+    msal_app = ConfidentialClientApplication(
+        client_id=CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        client_credential=CLIENT_SECRET
+    )
+
+    # Step 1: Show login link if no auth code yet
+    if st.session_state.ms_auth_code is None and st.session_state.ms_access_token is None:
+        auth_url = msal_app.get_authorization_request_url(
+            SCOPES,
+            redirect_uri=REDIRECT_URI
         )
-
-        auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
         st.markdown(f"[Login with Microsoft]({auth_url})")
 
-query_params = st.experimental_get_query_params()
-if "code" in query_params and "ms_auth_code" not in st.session_state:
-    st.session_state.ms_auth_code = query_params["code"][0]
+        # Get the code from query parameters after redirect
+        query_params = st.experimental_get_query_params()
+        if "code" in query_params:
+            st.session_state.ms_auth_code = query_params["code"][0]
 
-# Then use the stored code to acquire token
-if st.session_state.ms_auth_code and st.session_state.ms_access_token is None:
-    result = msal_app.acquire_token_by_authorization_code(
-        st.session_state.ms_auth_code, scopes=SCOPES, redirect_uri=REDIRECT_URI
-    )
-    if "access_token" in result:
-        st.session_state.ms_access_token = result["access_token"]
-        st.success("Microsoft login successful!")
-    else:
-        st.error(f"Microsoft login failed: {result.get('error_description')}")
+    # Step 2: Exchange auth code for access token
+    if st.session_state.ms_auth_code is not None and st.session_state.ms_access_token is None:
+        result = msal_app.acquire_token_by_authorization_code(
+            st.session_state.ms_auth_code,
+            scopes=SCOPES,
+            redirect_uri=REDIRECT_URI
+        )
+        if "access_token" in result:
+            st.session_state.ms_access_token = result["access_token"]
+            st.success("Microsoft login successful!")
+        else:
+            st.error(f"Microsoft login failed: {result.get('error_description')}")
+
 
 
 # -------------------- UI --------------------
