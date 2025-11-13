@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
 from transformers import pipeline
 
-st.set_page_config(page_title="GBS AI", page_icon="📧")
+st.set_page_config(page_title="GBS AI", page_icon="")
 st.title("GBS AI")
 
 # -------------------- CONFIG --------------------
