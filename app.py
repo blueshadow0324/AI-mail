@@ -3,18 +3,21 @@ import re
 import html
 import requests
 from transformers import pipeline
+
+# Google imports
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
+
+# Microsoft imports
 from msal import PublicClientApplication
 
-# -------------------- PAGE CONFIG --------------------
 st.set_page_config(page_title="GBS AI", page_icon="🤖")
 st.title("GBS AI")
 
 # -------------------- CONFIG --------------------
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-MS_SCOPES = ["Mail.Read"]
+MS_SCOPES = ["https://graph.microsoft.com/Mail.Read"]
 
 login_choice = st.radio("Login with:", ["Google", "Microsoft"])
 
@@ -25,7 +28,9 @@ if login_choice == "Google":
     SCOPES = GOOGLE_SCOPES
 else:
     CLIENT_ID = st.secrets["microsoft"]["client_id"]
+    CLIENT_SECRET = st.secrets["microsoft"]["client_secret"]  # only needed for confidential clients
     TENANT_ID = st.secrets["microsoft"]["tenant_id"]
+    REDIRECT_URI = st.secrets["microsoft"]["redirect_uri"]
     SCOPES = MS_SCOPES
 
 # -------------------- SUMMARIZER --------------------
@@ -35,7 +40,7 @@ def load_summarizer():
 
 summarizer = load_summarizer()
 
-# -------------------- UTILITY FUNCTIONS --------------------
+# -------------------- UTILITY --------------------
 def clean_text(text):
     text = html.unescape(text)
     text = text.translate(str.maketrans("åäöÅÄÖ", "aaoAAO"))
@@ -57,7 +62,7 @@ def generate_bullet_summary(text):
     filtered = [s for s in filtered if len(s.split()) >= 4]
     if not filtered:
         return "- No meaningful content found."
-
+    
     keywords = ["update", "invite", "security", "order", "jobb", "client"]
     important = [s for s in filtered if any(k in s.lower() for k in keywords)] or filtered[:5]
 
@@ -122,24 +127,35 @@ elif login_choice == "Microsoft":
         st.session_state.ms_access_token = None
 
     if st.session_state.ms_access_token is None:
-        app = PublicClientApplication(CLIENT_ID, authority=f"https://login.microsoftonline.com/{TENANT_ID}")
-        flow = app.initiate_device_flow(scopes=SCOPES)
-        st.text(flow["message"])  # User goes to URL and enters code
-        result = app.acquire_token_by_device_flow(flow)
+        app = PublicClientApplication(
+            CLIENT_ID,
+            authority=f"https://login.microsoftonline.com/{TENANT_ID}"
+        )
+        device_flow = app.initiate_device_flow(scopes=["https://graph.microsoft.com/Mail.Read"])
+        if "user_code" not in device_flow:
+            st.error("Failed to create device flow. Check Azure app registration.")
+            st.stop()
+        
+        st.text(device_flow["message"])  # instructs user to visit URL and enter code
+        result = app.acquire_token_by_device_flow(device_flow)
         if "access_token" in result:
             st.session_state.ms_access_token = result["access_token"]
             st.success("✅ Microsoft login successful!")
         else:
             st.error(f"Microsoft login failed: {result.get('error_description')}")
+            st.stop()
 
     def get_microsoft_emails(max_results=10):
         if not st.session_state.ms_access_token:
             return ""
-        headers = {"Authorization": f"Bearer {st.session_state.ms_access_token}"}
+        headers = {
+            "Authorization": f"Bearer {st.session_state.ms_access_token}",
+            "Accept": "application/json"
+        }
         url = f"https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages?$top={max_results}&$select=subject,bodyPreview"
         response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            st.error(f"Graph API request failed ({response.status_code}): {response.text}")
+        if response.status_code == 401:
+            st.error("Unauthorized! Check your access token or app registration scopes.")
             return ""
         emails = response.json().get("value", [])
         emails_text = ""
@@ -147,7 +163,7 @@ elif login_choice == "Microsoft":
             emails_text += f"{i}. {e.get('subject','')}: {e.get('bodyPreview','')}\n"
         return emails_text
 
-# -------------------- STREAMLIT UI --------------------
+# -------------------- UI --------------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
 
 if st.button("Fetch & Generate Summary"):
