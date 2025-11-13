@@ -72,11 +72,13 @@ def generate_bullet_summary(text):
 # -------------------- GOOGLE OAUTH --------------------
 if login_choice == "Google":
     from google.auth.transport.requests import Request
-
     if "google_creds" not in st.session_state:
         st.session_state.google_creds = None
 
     if st.session_state.google_creds is None:
+        # Clear any old query params
+        st.experimental_set_query_params()
+
         flow = Flow.from_client_config(
             {
                 "web": {
@@ -101,62 +103,52 @@ if login_choice == "Google":
             try:
                 flow.fetch_token(code=code)
                 st.session_state.google_creds = flow.credentials
-                st.success("Google login successful!")
+                st.success("✅ Google login successful!")
+                # Clear query params after successful login
+                st.experimental_set_query_params()
             except Exception as e:
-                st.error(f"Google login failed: {e}")
+                st.error(f"⚠️ Google login failed: {e}")
                 st.stop()
-
-    def get_google_emails(creds, max_results=10):
-        service = build("gmail", "v1", credentials=creds)
-        results = service.users().messages().list(userId="me", maxResults=max_results).execute()
-        messages = results.get("messages", [])
-        emails_text = ""
-        for i, msg in enumerate(messages, 1):
-            msg_data = service.users().messages().get(userId="me", id=msg["id"]).execute()
-            snippet = msg_data.get("snippet", "")
-            emails_text += f"{i}. {snippet}\n"
-        return emails_text
 
 # -------------------- MICROSOFT OAUTH --------------------
 elif login_choice == "Microsoft":
     from msal import ConfidentialClientApplication
-
     if "ms_access_token" not in st.session_state:
         st.session_state.ms_access_token = None
 
     if st.session_state.ms_access_token is None:
+        # Clear any old query params
+        st.experimental_set_query_params()
+
         msal_app = ConfidentialClientApplication(
             CLIENT_ID,
             authority=f"https://login.microsoftonline.com/{TENANT_ID}",
             client_credential=CLIENT_SECRET,
         )
+
         auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
         st.markdown(f"[Login with Microsoft]({auth_url})")
 
         query_params = st.experimental_get_query_params()
         if "code" in query_params:
             code = query_params["code"][0]
-            result = msal_app.acquire_token_by_authorization_code(code, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+            result = msal_app.acquire_token_by_authorization_code(
+                code, scopes=SCOPES, redirect_uri=REDIRECT_URI
+            )
             if "access_token" in result:
                 st.session_state.ms_access_token = result["access_token"]
-                st.success("Microsoft login successful!")
+                st.success("✅ Microsoft login successful!")
+                # Clear query params after successful login
+                st.experimental_set_query_params()
             else:
-                st.error(f"Microsoft login failed: {result.get('error_description')}")
+                st.error(f"⚠️ Microsoft login failed: {result.get('error_description')}")
+                st.stop()
 
-    def get_microsoft_emails(max_results=10):
-        headers = {"Authorization": f"Bearer {st.session_state.ms_access_token}"}
-        url = f"https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages?$top={max_results}&$select=subject,bodyPreview"
-        response = requests.get(url, headers=headers)
-        emails = response.json().get("value", [])
-        emails_text = ""
-        for i, e in enumerate(emails, 1):
-            emails_text += f"{i}. {e.get('subject','')}: {e.get('bodyPreview','')}\n"
-        return emails_text
 
 # -------------------- UI --------------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
 
-if st.button("📬 Fetch & Generate Summary"):
+if st.button("Fetch & Generate Summary"):
     loading = st.empty()
     loading.text("Fetching emails...")
 
