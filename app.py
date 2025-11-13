@@ -7,7 +7,7 @@ from google_auth_oauthlib.flow import Flow
 from transformers import pipeline
 
 st.set_page_config(page_title="GBS AI", page_icon="📧")
-st.title("📨 GBS AI Email Summarizer")
+st.title("GBS AI")
 
 # -------------------- CONFIG --------------------
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -93,7 +93,7 @@ if login_choice == "Google":
         auth_url, _ = flow.authorization_url(
             prompt="consent", access_type="offline", include_granted_scopes="true"
         )
-        st.markdown(f"[🔑 Login with Google]({auth_url})")
+        st.markdown(f"[Login with Google]({auth_url})")
 
         query_params = st.experimental_get_query_params()
         if "code" in query_params:
@@ -101,9 +101,9 @@ if login_choice == "Google":
             try:
                 flow.fetch_token(code=code)
                 st.session_state.google_creds = flow.credentials
-                st.success("✅ Google login successful!")
+                st.success("Google login successful!")
             except Exception as e:
-                st.error(f"⚠️ Google login failed: {e}")
+                st.error(f"Google login failed: {e}")
                 st.stop()
 
     def get_google_emails(creds, max_results=10):
@@ -131,7 +131,7 @@ elif login_choice == "Microsoft":
             client_credential=CLIENT_SECRET,
         )
         auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
-        st.markdown(f"[🔑 Login with Microsoft]({auth_url})")
+        st.markdown(f"[Login with Microsoft]({auth_url})")
 
         query_params = st.experimental_get_query_params()
         if "code" in query_params:
@@ -139,9 +139,9 @@ elif login_choice == "Microsoft":
             result = msal_app.acquire_token_by_authorization_code(code, scopes=SCOPES, redirect_uri=REDIRECT_URI)
             if "access_token" in result:
                 st.session_state.ms_access_token = result["access_token"]
-                st.success("✅ Microsoft login successful!")
+                st.success("Microsoft login successful!")
             else:
-                st.error(f"⚠️ Microsoft login failed: {result.get('error_description')}")
+                st.error(f"Microsoft login failed: {result.get('error_description')}")
 
     def get_microsoft_emails(max_results=10):
         headers = {"Authorization": f"Bearer {st.session_state.ms_access_token}"}
@@ -172,5 +172,5 @@ if st.button("📬 Fetch & Generate Summary"):
         loading.text("Generating bullet summary...")
         summary = generate_bullet_summary(emails_text)
         loading.empty()
-        st.subheader("📌 Important Highlights:")
+        st.subheader("Important Highlights:")
         st.text(summary)
