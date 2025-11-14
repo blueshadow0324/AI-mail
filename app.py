@@ -12,7 +12,7 @@ from google.auth.transport.requests import Request
 # Microsoft imports
 from msal import PublicClientApplication
 
-st.set_page_config(page_title="GBS AI", page_icon="🤖")
+st.set_page_config(page_title="GBS AI", page_icon="")
 st.title("GBS AI")
 
 # -------------------- CONFIG --------------------
@@ -105,7 +105,7 @@ if login_choice == "Google":
             try:
                 flow.fetch_token(code=code)
                 st.session_state.google_creds = flow.credentials
-                st.success("✅ Google login successful!")
+                st.success("Google login successful!")
             except Exception as e:
                 st.error(f"Google login failed: {e}")
                 st.stop()
@@ -140,7 +140,7 @@ elif login_choice == "Microsoft":
         result = app.acquire_token_by_device_flow(device_flow)
         if "access_token" in result:
             st.session_state.ms_access_token = result["access_token"]
-            st.success("✅ Microsoft login successful!")
+            st.success("Microsoft login successful!")
         else:
             st.error(f"Microsoft login failed: {result.get('error_description')}")
             st.stop()
@@ -182,5 +182,5 @@ if st.button("Fetch & Generate Summary"):
         loading.text("Generating bullet summary...")
         summary = generate_bullet_summary(emails_text)
         loading.empty()
-        st.subheader("📌 Important Highlights:")
+        st.subheader("Important Highlights:")
         st.text(summary)
