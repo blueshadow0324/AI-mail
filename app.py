@@ -145,7 +145,7 @@ elif login_choice == "Microsoft":
             st.error(f"Microsoft login failed: {result.get('error_description')}")
             st.stop()
 
-    def get_microsoft_emails(max_results=10):
+def get_microsoft_emails(max_results=10):
     headers = {"Authorization": f"Bearer {st.session_state.ms_access_token}"}
     url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_results}&$select=subject,bodyPreview"
 
