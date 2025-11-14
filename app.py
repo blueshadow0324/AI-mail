@@ -146,22 +146,23 @@ elif login_choice == "Microsoft":
             st.stop()
 
     def get_microsoft_emails(max_results=10):
-        if not st.session_state.ms_access_token:
-            return ""
-        headers = {
-            "Authorization": f"Bearer {st.session_state.ms_access_token}",
-            "Accept": "application/json"
-        }
-        url = f"https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages?$top={max_results}&$select=subject,bodyPreview"
-        response = requests.get(url, headers=headers)
-        if response.status_code == 401:
-            st.error("Unauthorized! Check your access token or app registration scopes.")
-            return ""
-        emails = response.json().get("value", [])
-        emails_text = ""
-        for i, e in enumerate(emails, 1):
-            emails_text += f"{i}. {e.get('subject','')}: {e.get('bodyPreview','')}\n"
-        return emails_text
+    headers = {"Authorization": f"Bearer {st.session_state.ms_access_token}"}
+    url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_results}&$select=subject,bodyPreview"
+
+    response = requests.get(url, headers=headers)
+
+    # DEBUG BLOCK — add this:
+    st.write("DEBUG raw response:", response.status_code)
+    try:
+        st.write(response.json())
+    except:
+        st.write("Response text:", response.text)
+
+    if response.status_code != 200:
+        return None
+
+    data = response.json()
+    emails = data.get("value", [])
 
 # -------------------- UI --------------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
