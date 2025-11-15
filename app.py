@@ -105,35 +105,49 @@ elif login_choice == "Microsoft":
     )
 
 # ----------------- HANDLE REDIRECT -----------------
+# ----------------- HANDLE REDIRECT -----------------
 query_params = st.experimental_get_query_params()
 
 if "code" in query_params and "state" in query_params:
     state = query_params.get("state", [None])[0]
 
-    # Google OAuth
+    # -------- Google OAuth --------
     if state == "google" and st.session_state.google_creds is None:
         try:
             flow.fetch_token(code=query_params["code"][0])
             st.session_state.google_creds = flow.credentials
-            st.experimental_set_query_params()
+            st.experimental_set_query_params()  # Clear code & state from URL
             st.success("Google login successful!")
         except Exception as e:
             st.error(f"Google login failed: {e}")
 
-        # Microsoft OAuth
-    if state == "microsoft" and st.session_state.ms_token is None:
-        code = query_params["code"][0]
-        token_result = msal_app.acquire_token_by_authorization_code(
-            code,
-            scopes=MS_SCOPES,
-            redirect_uri=st.secrets["microsoft"]["redirect_uri"]
-        )
-        if "access_token" in token_result:
-            st.session_state.ms_token = token_result["access_token"]
-            st.experimental_set_query_params()
-            st.success("Microsoft login successful!")
-        else:
-            st.error(f"Microsoft login failed: {token_result.get('error_description')}")
+    # -------- Microsoft OAuth --------
+    elif state == "microsoft" and st.session_state.ms_token is None:
+        try:
+            code = query_params["code"][0]
+            # Ensure msal_app exists in session state
+            if "msal_app" not in st.session_state:
+                st.session_state.msal_app = msal.ConfidentialClientApplication(
+                    client_id=st.secrets["microsoft"]["client_id"],
+                    authority="https://login.microsoftonline.com/common",
+                    client_credential=st.secrets["microsoft"]["client_secret"]
+                )
+            msal_app = st.session_state.msal_app
+
+            token_result = msal_app.acquire_token_by_authorization_code(
+                code,
+                scopes=MS_SCOPES,
+                redirect_uri=st.secrets["microsoft"]["redirect_uri"]
+            )
+
+            if "access_token" in token_result:
+                st.session_state.ms_token = token_result["access_token"]
+                st.experimental_set_query_params()  # Clear code & state
+                st.success("Microsoft login successful!")
+            else:
+                st.error(f"Microsoft login failed: {token_result.get('error_description')}")
+        except Exception as e:
+            st.error(f"Microsoft login error: {e}")
 
 # ----------------- SHOW LOGIN BUTTONS -----------------
 if login_choice == "Google" and st.session_state.google_creds is None:
@@ -146,9 +160,18 @@ if login_choice == "Google" and st.session_state.google_creds is None:
     st.markdown(f"[Login with Google]({auth_url})")
 
 elif login_choice == "Microsoft" and st.session_state.ms_token is None:
+    # Ensure msal_app exists before creating URL
+    if "msal_app" not in st.session_state:
+        st.session_state.msal_app = msal.ConfidentialClientApplication(
+            client_id=st.secrets["microsoft"]["client_id"],
+            authority="https://login.microsoftonline.com/common",
+            client_credential=st.secrets["microsoft"]["client_secret"]
+        )
+    msal_app = st.session_state.msal_app
+
     auth_url = msal_app.get_authorization_request_url(
         MS_SCOPES,
-        redirect_uri=REDIRECT_URI,
+        redirect_uri=st.secrets["microsoft"]["redirect_uri"],
         state="microsoft"
     )
     st.markdown(f"[Login with Microsoft]({auth_url})")
