@@ -3,28 +3,15 @@ import re
 import html
 import requests
 from transformers import pipeline
-
-# Google imports
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import Flow
-
-# Microsoft imports
 import msal
 
 st.set_page_config(page_title="GBS AI", page_icon="")
 st.title("GBS AI")
 
 # ---------------- CONFIG ----------------
-GOOGLE_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 MS_SCOPES = ["https://graph.microsoft.com/Mail.Read"]
 
-login_choice = st.radio("Login with:", ["Google", "Microsoft"])
-
 # ----------------- SESSION INITIALIZATION -----------------
-if "google_creds" not in st.session_state:
-    st.session_state.google_creds = None
-if "google_flow" not in st.session_state:
-    st.session_state.google_flow = None
 if "ms_token" not in st.session_state:
     st.session_state.ms_token = None
 
@@ -69,100 +56,51 @@ def generate_bullet_summary(text):
             bullets.append(f"- {s.strip()}")
     return "\n".join(bullets)
 
-# ----------------- GOOGLE LOGIN -----------------
-if login_choice == "Google":
-    CLIENT_ID = st.secrets["google"]["client_id"]
-    CLIENT_SECRET = st.secrets["google"]["client_secret"]
-    REDIRECT_URI = st.secrets["google"]["redirect_uri"]
-
-    if st.session_state.google_flow is None:
-        flow = Flow.from_client_config(
-            {"web": {
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token"
-            }},
-            scopes=GOOGLE_SCOPES,
-            redirect_uri=REDIRECT_URI
-        )
-        st.session_state.google_flow = flow
-    else:
-        flow = st.session_state.google_flow
-
-    query_params = st.experimental_get_query_params()
-    if "code" in query_params and st.session_state.google_creds is None:
-        code = query_params["code"][0]
-        try:
-            flow.fetch_token(code=code)
-            st.session_state.google_creds = flow.credentials
-            st.success("Google login successful!")
-            st.experimental_set_query_params()  # clear code
-        except Exception as e:
-            st.error(f"Google login failed: {e}")
-            st.stop()
-
-    if st.session_state.google_creds is None:
-        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
-        st.markdown(f"[Login with Google]({auth_url})")
-
-    def get_google_emails(creds, max_results=10):
-        service = build("gmail", "v1", credentials=creds)
-        results = service.users().messages().list(userId="me", maxResults=max_results).execute()
-        messages = results.get("messages", [])
-        emails_text = ""
-        for i, msg in enumerate(messages, 1):
-            msg_data = service.users().messages().get(userId="me", id=msg["id"]).execute()
-            snippet = msg_data.get("snippet", "")
-            emails_text += f"{i}. {snippet}\n"
-        return emails_text
-
 # ----------------- MICROSOFT LOGIN -----------------
-elif login_choice == "Microsoft":
-    CLIENT_ID = st.secrets["microsoft"]["client_id"]
-    CLIENT_SECRET = st.secrets["microsoft"]["client_secret"]
-    REDIRECT_URI = st.secrets["microsoft"]["redirect_uri"]
-    AUTHORITY = "https://login.microsoftonline.com/common"
+CLIENT_ID = st.secrets["microsoft"]["client_id"]
+CLIENT_SECRET = st.secrets["microsoft"]["client_secret"]
+REDIRECT_URI = st.secrets["microsoft"]["redirect_uri"]
+AUTHORITY = "https://login.microsoftonline.com/common"
 
-    msal_app = msal.ConfidentialClientApplication(
-        client_id=CLIENT_ID,
-        authority=AUTHORITY,
-        client_credential=CLIENT_SECRET
+msal_app = msal.ConfidentialClientApplication(
+    client_id=CLIENT_ID,
+    authority=AUTHORITY,
+    client_credential=CLIENT_SECRET
+)
+
+query_params = st.experimental_get_query_params()
+if "code" in query_params and st.session_state.ms_token is None:
+    code = query_params["code"][0]
+    token_result = msal_app.acquire_token_by_authorization_code(
+        code,
+        scopes=MS_SCOPES,
+        redirect_uri=REDIRECT_URI
     )
+    if "access_token" in token_result:
+        st.session_state.ms_token = token_result["access_token"]
+        st.success("Microsoft login successful!")
+        st.experimental_set_query_params()  # clear code
+    else:
+        st.error(f"Microsoft login failed: {token_result.get('error_description')}")
+        st.stop()
 
-    query_params = st.experimental_get_query_params()
-    if "code" in query_params and st.session_state.ms_token is None:
-        code = query_params["code"][0]
-        token_result = msal_app.acquire_token_by_authorization_code(
-            code,
-            scopes=MS_SCOPES,
-            redirect_uri=REDIRECT_URI
-        )
-        if "access_token" in token_result:
-            st.session_state.ms_token = token_result["access_token"]
-            st.success("Microsoft login successful!")
-            st.experimental_set_query_params()
-        else:
-            st.error(f"Microsoft login failed: {token_result.get('error_description')}")
-            st.stop()
+if st.session_state.ms_token is None:
+    auth_url = msal_app.get_authorization_request_url(MS_SCOPES, redirect_uri=REDIRECT_URI)
+    st.markdown(f"[Login with Microsoft]({auth_url})")
 
-    if st.session_state.ms_token is None:
-        auth_url = msal_app.get_authorization_request_url(MS_SCOPES, redirect_uri=REDIRECT_URI)
-        st.markdown(f"[Login with Microsoft]({auth_url})")
-
-    def get_microsoft_emails(max_results=10):
-        token = st.session_state.get("ms_token")
-        if not token:
-            return None
-        headers = {"Authorization": f"Bearer {token}"}
-        url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_results}&$select=subject,bodyPreview"
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            st.error(f"Microsoft Graph error ({response.status_code}): {response.text}")
-            return None
-        data = response.json()
-        emails = [m.get("bodyPreview", "") for m in data.get("value", [])]
-        return "\n".join(emails)
+def get_microsoft_emails(max_results=10):
+    token = st.session_state.get("ms_token")
+    if not token:
+        return None
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_results}&$select=subject,bodyPreview"
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        st.error(f"Microsoft Graph error ({response.status_code}): {response.text}")
+        return None
+    data = response.json()
+    emails = [m.get("bodyPreview", "") for m in data.get("value", [])]
+    return "\n".join(emails)
 
 # ----------------- UI -----------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
@@ -171,12 +109,7 @@ if st.button("Fetch & Generate Summary"):
     loading = st.empty()
     loading.text("Fetching emails...")
 
-    emails_text = None
-    if login_choice == "Google" and st.session_state.google_creds:
-        emails_text = get_google_emails(st.session_state.google_creds, max_results=max_emails)
-    elif login_choice == "Microsoft" and st.session_state.ms_token:
-        emails_text = get_microsoft_emails(max_results=max_emails)
-
+    emails_text = get_microsoft_emails(max_results=max_emails)
     if not emails_text:
         st.warning("Please log in first or something went wrong!")
         st.stop()
