@@ -25,6 +25,8 @@ if "ms_token" not in st.session_state:
     st.session_state.ms_token = None
 if "msal_app" not in st.session_state:
     st.session_state.msal_app = None
+if "google_flow" not in st.session_state:
+    st.session_state.google_flow = None
 
 # ----------------- Summarizer -----------------
 @st.cache_resource
@@ -69,7 +71,7 @@ if login_choice == "Google":
     CLIENT_SECRET = st.secrets["google"]["client_secret"]
     REDIRECT_URI = st.secrets["google"]["redirect_uri"]
 
-    if "google_flow" not in st.session_state:
+    if st.session_state.google_flow is None:
         st.session_state.google_flow = Flow.from_client_config(
             {"web": {
                 "client_id": CLIENT_ID,
@@ -102,17 +104,17 @@ query_params = st.experimental_get_query_params()
 if "code" in query_params and "state" in query_params:
     state = query_params.get("state", [None])[0]
 
-    # Google
+    # -------- Google --------
     if state == "google" and st.session_state.google_creds is None:
         try:
             flow.fetch_token(code=query_params["code"][0])
             st.session_state.google_creds = flow.credentials
-            st.experimental_set_query_params()
+            st.experimental_set_query_params()  # Clear ?code=... from URL
             st.success("Google login successful!")
         except Exception as e:
             st.error(f"Google login failed: {e}")
 
-    # Microsoft
+    # -------- Microsoft --------
     elif state == "microsoft" and st.session_state.ms_token is None:
         try:
             code = query_params["code"][0]
@@ -122,7 +124,7 @@ if "code" in query_params and "state" in query_params:
                 redirect_uri=REDIRECT_URI
             )
             if "access_token" in token_result:
-                st.session_state.ms_token = token_result["access_token"]
+                st.session_state.ms_token = token_result["access_token"]  # Store immediately
                 st.experimental_set_query_params()
                 st.success("Microsoft login successful!")
             else:
@@ -148,7 +150,7 @@ elif login_choice == "Microsoft" and st.session_state.ms_token is None:
     )
     st.markdown(f"[Login with Microsoft]({auth_url})")
 
-# ----------------- Email Fetching -----------------
+# ----------------- Email Fetching Functions -----------------
 def get_google_emails(max_results=10):
     creds = st.session_state.google_creds
     service = build("gmail", "v1", credentials=creds)
@@ -178,7 +180,7 @@ def get_microsoft_emails(max_results=10):
     emails = [m.get("bodyPreview", "") for m in data.get("value", [])]
     return "\n".join(emails)
 
-# ----------------- UI -----------------
+# ----------------- UI: Fetch & Summarize -----------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
 
 if st.button("Fetch & Generate Summary"):
@@ -187,7 +189,7 @@ if st.button("Fetch & Generate Summary"):
 
     emails_text = None
 
-    # Fetch Google emails if credentials exist
+    # -------- Google --------
     google_creds = st.session_state.get("google_creds")
     if google_creds:
         try:
@@ -199,7 +201,7 @@ if st.button("Fetch & Generate Summary"):
             st.error(f"Error fetching Google emails: {e}")
             emails_text = None
 
-    # Fetch Microsoft emails only if Google not fetched
+    # -------- Microsoft --------
     ms_token = st.session_state.get("ms_token")
     if emails_text is None and ms_token:
         try:
