@@ -219,21 +219,21 @@ if st.button("Fetch & Generate Summary"):
 
     emails_text = None  # Always define first
 
-    # -------- Google Emails --------
-    if st.session_state.get("google_creds"):
-        creds = st.session_state.google_creds
+    # -------- Google --------
+    google_creds = st.session_state.get("google_creds")
+    if google_creds:
         try:
-            # Refresh token if expired
-            if creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            if creds.valid:
+            if google_creds.expired and google_creds.refresh_token:
+                google_creds.refresh(Request())
+            if google_creds.valid:
                 emails_text = get_google_emails(max_results=max_emails)
         except Exception as e:
             st.error(f"Error fetching Google emails: {e}")
             emails_text = None
 
-    # -------- Microsoft Emails (only if Google didn't fetch) --------
-    if emails_text is None and st.session_state.get("ms_token"):
+    # -------- Microsoft --------
+    ms_token = st.session_state.get("ms_token")
+    if emails_text is None and ms_token:
         try:
             emails_text = get_microsoft_emails(max_results=max_emails)
         except Exception as e:
@@ -241,11 +241,11 @@ if st.button("Fetch & Generate Summary"):
             emails_text = None
 
     # -------- Check if any emails were fetched --------
-    if not emails_text:
+    if emails_text is None or emails_text.strip() == "":
         st.warning("Please log in first or something went wrong!")
         st.stop()
 
-    # -------- Summarize Emails --------
+    # -------- Summarize --------
     loading.text("Generating bullet summary...")
     try:
         summary = generate_bullet_summary(emails_text)
@@ -255,3 +255,4 @@ if st.button("Fetch & Generate Summary"):
     except Exception as e:
         loading.empty()
         st.error(f"Error generating summary: {e}")
+
