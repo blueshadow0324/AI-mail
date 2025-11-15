@@ -10,7 +10,8 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 
 # Microsoft imports
-from msal import PublicClientApplication
+import msal
+
 
 st.set_page_config(page_title="GBS AI", page_icon="")
 st.title("GBS AI")
