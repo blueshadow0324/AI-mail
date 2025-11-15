@@ -127,47 +127,75 @@ if login_choice == "Google":
         return emails_text
 
 # -------------------- MICROSOFT DEVICE CODE FLOW --------------------
-elif login_choice == "Microsoft":
-    if "ms_access_token" not in st.session_state:
-        st.session_state.ms_access_token = None
+# -----------------------------------------------
+# MICROSOFT AUTH CODE FLOW (CORRECT WORKING VERSION)
+# -----------------------------------------------
+import msal
 
-    if st.session_state.ms_access_token is None:
-        app = PublicClientApplication(
-            CLIENT_ID,
-            authority=f"https://login.microsoftonline.com/{TENANT_ID}"
+if login_choice == "Microsoft":
+
+    CLIENT_ID = st.secrets["microsoft"]["client_id"]
+    CLIENT_SECRET = st.secrets["microsoft"]["client_secret"]
+    REDIRECT_URI = st.secrets["microsoft"]["redirect_uri"]
+    AUTHORITY = "https://login.microsoftonline.com/common"
+    SCOPES = ["User.Read", "Mail.Read"]  # REQUIRED for Graph
+
+    # create MSAL confidential client
+    msal_app = msal.ConfidentialClientApplication(
+        CLIENT_ID,
+        authority=AUTHORITY,
+        client_credential=CLIENT_SECRET
+    )
+
+    # first time: no token → show login button
+    if "ms_token" not in st.session_state:
+
+        # build authorization URL
+        auth_url = msal_app.get_authorization_request_url(
+            SCOPES,
+            redirect_uri=REDIRECT_URI
         )
-        device_flow = app.initiate_device_flow(scopes=["https://graph.microsoft.com/Mail.Read"])
-        if "user_code" not in device_flow:
-            st.error("Failed to create device flow. Check Azure app registration.")
-            st.stop()
-        
-        st.text(device_flow["message"])  # instructs user to visit URL and enter code
-        result = app.acquire_token_by_device_flow(device_flow)
-        if "access_token" in result:
-            st.session_state.ms_access_token = result["access_token"]
-            st.success("Microsoft login successful!")
-        else:
-            st.error(f"Microsoft login failed: {result.get('error_description')}")
-            st.stop()
 
-def get_microsoft_emails(max_results=10):
-    headers = {"Authorization": f"Bearer {st.session_state.ms_access_token}"}
-    url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_results}&$select=subject,bodyPreview"
+        st.markdown(f"[Login with Microsoft]({auth_url})")
 
-    response = requests.get(url, headers=headers)
+        # handle redirect back from Microsoft
+        params = st.experimental_get_query_params()
+        if "code" in params:
+            code = params["code"][0]
 
-    # DEBUG BLOCK — add this:
-    st.write("DEBUG raw response:", response.status_code)
-    try:
-        st.write(response.json())
-    except:
-        st.write("Response text:", response.text)
+            token_result = msal_app.acquire_token_by_authorization_code(
+                code,
+                scopes=SCOPES,
+                redirect_uri=REDIRECT_URI
+            )
 
-    if response.status_code != 200:
-        return None
+            if "access_token" in token_result:
+                st.session_state.ms_token = token_result["access_token"]
+                st.success("Microsoft login successful!")
+            else:
+                st.error(token_result.get("error_description"))
+                st.stop()
 
-    data = response.json()
-    emails = data.get("value", [])
+    # email fetcher
+    def get_microsoft_emails(max_results=10):
+        token = st.session_state.get("ms_token")
+        if not token:
+            return None
+
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_results}"
+
+        response = requests.get(url, headers=headers)
+
+        if response.status_code != 200:
+            st.error("Microsoft Graph error:")
+            st.write(response.text)
+            return None
+
+        data = response.json()
+        emails = [m.get("bodyPreview", "") for m in data.get("value", [])]
+        return "\n".join(emails)
+
 
 # -------------------- UI --------------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
