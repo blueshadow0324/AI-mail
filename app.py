@@ -7,13 +7,11 @@ from transformers import pipeline
 # Google imports
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
-from google.auth.transport.requests import Request
 
 # Microsoft imports
 import msal
 
 st.set_page_config(page_title="GBS AI", page_icon="")
-
 st.title("GBS AI")
 
 # ---------------- CONFIG ----------------
@@ -25,6 +23,8 @@ login_choice = st.radio("Login with:", ["Google", "Microsoft"])
 # ----------------- SESSION INITIALIZATION -----------------
 if "google_creds" not in st.session_state:
     st.session_state.google_creds = None
+if "google_flow" not in st.session_state:
+    st.session_state.google_flow = None
 if "ms_token" not in st.session_state:
     st.session_state.ms_token = None
 
@@ -47,15 +47,19 @@ def split_sentences(text):
 def generate_bullet_summary(text):
     cleaned = clean_text(text)
     sentences = split_sentences(cleaned)
-    ignore_patterns = [r"unsubscribe", r"click here", r"view in your browser",
-                       r"follow us", r"shop now", r"offer", r"sale", r"terms and service",
-                       r"jobb", r"tjanster"]
+    ignore_patterns = [
+        r"unsubscribe", r"click here", r"view in your browser",
+        r"follow us", r"shop now", r"offer", r"sale",
+        r"terms and service", r"jobb", r"tjanster"
+    ]
     filtered = [s for s in sentences if not any(re.search(p, s, re.I) for p in ignore_patterns)]
     filtered = [s for s in filtered if len(s.split()) >= 4]
     if not filtered:
         return "- No meaningful content found."
+    
     keywords = ["update", "invite", "security", "order", "jobb", "client"]
     important = [s for s in filtered if any(k in s.lower() for k in keywords)] or filtered[:5]
+    
     bullets = []
     for s in important:
         try:
@@ -71,7 +75,7 @@ if login_choice == "Google":
     CLIENT_SECRET = st.secrets["google"]["client_secret"]
     REDIRECT_URI = st.secrets["google"]["redirect_uri"]
 
-    if st.session_state.google_creds is None:
+    if st.session_state.google_flow is None:
         flow = Flow.from_client_config(
             {"web": {
                 "client_id": CLIENT_ID,
@@ -82,21 +86,25 @@ if login_choice == "Google":
             scopes=GOOGLE_SCOPES,
             redirect_uri=REDIRECT_URI
         )
+        st.session_state.google_flow = flow
+    else:
+        flow = st.session_state.google_flow
+
+    query_params = st.experimental_get_query_params()
+    if "code" in query_params and st.session_state.google_creds is None:
+        code = query_params["code"][0]
+        try:
+            flow.fetch_token(code=code)
+            st.session_state.google_creds = flow.credentials
+            st.success("Google login successful!")
+            st.experimental_set_query_params()  # clear code
+        except Exception as e:
+            st.error(f"Google login failed: {e}")
+            st.stop()
+
+    if st.session_state.google_creds is None:
         auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
         st.markdown(f"[Login with Google]({auth_url})")
-
-        query_params = st.experimental_get_query_params()
-        if "code" in query_params:
-            code = query_params["code"][0]
-            try:
-                flow.fetch_token(code=code)
-                st.session_state.google_creds = flow.credentials
-                st.success("Google login successful!")
-                # clear query params after login
-                st.experimental_set_query_params()
-            except Exception as e:
-                st.error(f"Google login failed: {e}")
-                st.stop()
 
     def get_google_emails(creds, max_results=10):
         service = build("gmail", "v1", credentials=creds)
@@ -122,25 +130,25 @@ elif login_choice == "Microsoft":
         client_credential=CLIENT_SECRET
     )
 
-    if st.session_state.ms_token is None:
-        auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
-        st.markdown(f"[Login with Microsoft]({auth_url})")
+    query_params = st.experimental_get_query_params()
+    if "code" in query_params and st.session_state.ms_token is None:
+        code = query_params["code"][0]
+        token_result = msal_app.acquire_token_by_authorization_code(
+            code,
+            scopes=MS_SCOPES,
+            redirect_uri=REDIRECT_URI
+        )
+        if "access_token" in token_result:
+            st.session_state.ms_token = token_result["access_token"]
+            st.success("Microsoft login successful!")
+            st.experimental_set_query_params()
+        else:
+            st.error(f"Microsoft login failed: {token_result.get('error_description')}")
+            st.stop()
 
-        query_params = st.experimental_get_query_params()
-        if "code" in query_params:
-            code = query_params["code"][0]
-            token_result = msal_app.acquire_token_by_authorization_code(
-                code,
-                scopes=SCOPES,
-                redirect_uri=REDIRECT_URI
-            )
-            if "access_token" in token_result:
-                st.session_state.ms_token = token_result["access_token"]
-                st.success("Microsoft login successful!")
-                st.experimental_set_query_params()
-            else:
-                st.error(f"Microsoft login failed: {token_result.get('error_description')}")
-                st.stop()
+    if st.session_state.ms_token is None:
+        auth_url = msal_app.get_authorization_request_url(MS_SCOPES, redirect_uri=REDIRECT_URI)
+        st.markdown(f"[Login with Microsoft]({auth_url})")
 
     def get_microsoft_emails(max_results=10):
         token = st.session_state.get("ms_token")
