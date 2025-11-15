@@ -2,7 +2,6 @@ import streamlit as st
 import re
 import html
 import requests
-from transformers import pipeline
 
 # Google imports
 from googleapiclient.discovery import build
@@ -31,7 +30,8 @@ if "ms_token" not in st.session_state:
 # ----------------- SUMMARIZER -----------------
 @st.cache_resource
 def load_summarizer():
-    # Use a lighter model for Streamlit Cloud
+    from transformers import pipeline
+    # lightweight model for Streamlit Cloud
     return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 summarizer = load_summarizer()
 
