@@ -105,7 +105,6 @@ elif login_choice == "Microsoft":
     )
 
 # ----------------- HANDLE REDIRECT -----------------
-# ----------------- HANDLE REDIRECT -----------------
 query_params = st.experimental_get_query_params()
 
 if "code" in query_params and "state" in query_params:
@@ -218,19 +217,18 @@ if st.button("Fetch & Generate Summary"):
     loading = st.empty()
     loading.text("Fetching emails...")
 
-    emails_text = None
-if login_choice == "Google" and st.session_state.get("google_creds"):
-    creds = st.session_state.google_creds
-    if creds.valid or creds.expired and creds.refresh_token:
-        emails_text = get_google_emails(max_results=max_emails)
-elif login_choice == "Microsoft" and st.session_state.get("ms_token"):
-    emails_text = get_microsoft_emails(max_results=max_emails)
+    emails_text = None  # define inside button scope
 
-if not emails_text:
-    st.warning("Please log in first or something went wrong!")
-    st.stop()
+    # Fetch emails only if credentials exist
+    if login_choice == "Google" and st.session_state.get("google_creds"):
+        creds = st.session_state.google_creds
+        if creds.valid or (creds.expired and creds.refresh_token):
+            emails_text = get_google_emails(max_results=max_emails)
 
+    elif login_choice == "Microsoft" and st.session_state.get("ms_token"):
+        emails_text = get_microsoft_emails(max_results=max_emails)
 
+    # Check if fetching failed
     if not emails_text:
         st.warning("Please log in first or something went wrong!")
         st.stop()
