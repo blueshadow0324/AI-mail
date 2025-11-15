@@ -120,13 +120,13 @@ if "code" in query_params and "state" in query_params:
         except Exception as e:
             st.error(f"Google login failed: {e}")
 
-    # Microsoft OAuth
-    elif state == "microsoft" and st.session_state.ms_token is None:
+        # Microsoft OAuth
+    if state == "microsoft" and st.session_state.ms_token is None:
         code = query_params["code"][0]
         token_result = msal_app.acquire_token_by_authorization_code(
             code,
             scopes=MS_SCOPES,
-            redirect_uri=REDIRECT_URI
+            redirect_uri=st.secrets["microsoft"]["redirect_uri"]
         )
         if "access_token" in token_result:
             st.session_state.ms_token = token_result["access_token"]
