@@ -7,11 +7,13 @@ from transformers import pipeline
 # Google imports
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
+from google.auth.transport.requests import Request
 
 # Microsoft imports
 import msal
 
 st.set_page_config(page_title="GBS AI", page_icon="")
+
 st.title("GBS AI")
 
 # ---------------- CONFIG ----------------
@@ -45,19 +47,15 @@ def split_sentences(text):
 def generate_bullet_summary(text):
     cleaned = clean_text(text)
     sentences = split_sentences(cleaned)
-    ignore_patterns = [
-        r"unsubscribe", r"click here", r"view in your browser",
-        r"follow us", r"shop now", r"offer", r"sale",
-        r"terms and service", r"jobb", r"tjanster"
-    ]
+    ignore_patterns = [r"unsubscribe", r"click here", r"view in your browser",
+                       r"follow us", r"shop now", r"offer", r"sale", r"terms and service",
+                       r"jobb", r"tjanster"]
     filtered = [s for s in sentences if not any(re.search(p, s, re.I) for p in ignore_patterns)]
     filtered = [s for s in filtered if len(s.split()) >= 4]
     if not filtered:
         return "- No meaningful content found."
-    
     keywords = ["update", "invite", "security", "order", "jobb", "client"]
     important = [s for s in filtered if any(k in s.lower() for k in keywords)] or filtered[:5]
-    
     bullets = []
     for s in important:
         try:
@@ -94,6 +92,7 @@ if login_choice == "Google":
                 flow.fetch_token(code=code)
                 st.session_state.google_creds = flow.credentials
                 st.success("Google login successful!")
+                # clear query params after login
                 st.experimental_set_query_params()
             except Exception as e:
                 st.error(f"Google login failed: {e}")
@@ -124,7 +123,7 @@ elif login_choice == "Microsoft":
     )
 
     if st.session_state.ms_token is None:
-        auth_url = msal_app.get_authorization_request_url(MS_SCOPES, redirect_uri=REDIRECT_URI)
+        auth_url = msal_app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
         st.markdown(f"[Login with Microsoft]({auth_url})")
 
         query_params = st.experimental_get_query_params()
@@ -132,7 +131,7 @@ elif login_choice == "Microsoft":
             code = query_params["code"][0]
             token_result = msal_app.acquire_token_by_authorization_code(
                 code,
-                scopes=MS_SCOPES,
+                scopes=SCOPES,
                 redirect_uri=REDIRECT_URI
             )
             if "access_token" in token_result:
