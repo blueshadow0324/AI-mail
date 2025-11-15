@@ -32,7 +32,12 @@ else:
     TENANT_ID = st.secrets["microsoft"]["tenant_id"]
     REDIRECT_URI = st.secrets["microsoft"]["redirect_uri"]
     SCOPES = MS_SCOPES
-
+    
+msal_app = msal.ConfidentialClientApplication(
+    client_id=CLIENT_ID,
+    authority="https://login.microsoftonline.com/common",
+    client_credential=CLIENT_SECRET
+)
 # -------------------- SUMMARIZER --------------------
 @st.cache_resource
 def load_summarizer():
