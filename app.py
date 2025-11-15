@@ -217,24 +217,41 @@ if st.button("Fetch & Generate Summary"):
     loading = st.empty()
     loading.text("Fetching emails...")
 
-    emails_text = None  # define inside button scope
+    emails_text = None  # Always define first
 
-    # Fetch emails only if credentials exist
-    if login_choice == "Google" and st.session_state.get("google_creds"):
+    # -------- Google Emails --------
+    if st.session_state.get("google_creds"):
         creds = st.session_state.google_creds
-        if creds.valid or (creds.expired and creds.refresh_token):
-            emails_text = get_google_emails(max_results=max_emails)
+        try:
+            # Refresh token if expired
+            if creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            if creds.valid:
+                emails_text = get_google_emails(max_results=max_emails)
+        except Exception as e:
+            st.error(f"Error fetching Google emails: {e}")
+            emails_text = None
 
-    elif login_choice == "Microsoft" and st.session_state.get("ms_token"):
-        emails_text = get_microsoft_emails(max_results=max_emails)
+    # -------- Microsoft Emails (only if Google didn't fetch) --------
+    if emails_text is None and st.session_state.get("ms_token"):
+        try:
+            emails_text = get_microsoft_emails(max_results=max_emails)
+        except Exception as e:
+            st.error(f"Error fetching Microsoft emails: {e}")
+            emails_text = None
 
-    # Check if fetching failed
+    # -------- Check if any emails were fetched --------
     if not emails_text:
         st.warning("Please log in first or something went wrong!")
         st.stop()
 
+    # -------- Summarize Emails --------
     loading.text("Generating bullet summary...")
-    summary = generate_bullet_summary(emails_text)
-    loading.empty()
-    st.subheader("Important Highlights:")
-    st.text(summary)
+    try:
+        summary = generate_bullet_summary(emails_text)
+        loading.empty()
+        st.subheader("Important Highlights:")
+        st.text(summary)
+    except Exception as e:
+        loading.empty()
+        st.error(f"Error generating summary: {e}")
