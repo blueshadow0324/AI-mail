@@ -190,18 +190,26 @@ def get_google_emails(max_results=10):
     return emails_text
 
 def get_microsoft_emails(max_results=10):
-    token = st.session_state.ms_token
+    token = st.session_state.get("ms_token")
     if not token:
         return None
+
+    # Optional: refresh token logic if using refresh tokens
+
     headers = {"Authorization": f"Bearer {token}"}
     url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_results}&$select=subject,bodyPreview"
     response = requests.get(url, headers=headers)
-    if response.status_code != 200:
+    if response.status_code == 401:  # Unauthorized
+        st.warning("Microsoft token expired. Please log in again.")
+        return None
+    elif response.status_code != 200:
         st.error(f"Microsoft Graph error ({response.status_code}): {response.text}")
         return None
+
     data = response.json()
     emails = [m.get("bodyPreview", "") for m in data.get("value", [])]
     return "\n".join(emails)
+
 
 # ----------------- UI -----------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
@@ -211,10 +219,17 @@ if st.button("Fetch & Generate Summary"):
     loading.text("Fetching emails...")
 
     emails_text = None
-    if login_choice == "Google" and st.session_state.google_creds:
+if login_choice == "Google" and st.session_state.get("google_creds"):
+    creds = st.session_state.google_creds
+    if creds.valid or creds.expired and creds.refresh_token:
         emails_text = get_google_emails(max_results=max_emails)
-    elif login_choice == "Microsoft" and st.session_state.ms_token:
-        emails_text = get_microsoft_emails(max_results=max_emails)
+elif login_choice == "Microsoft" and st.session_state.get("ms_token"):
+    emails_text = get_microsoft_emails(max_results=max_emails)
+
+if not emails_text:
+    st.warning("Please log in first or something went wrong!")
+    st.stop()
+
 
     if not emails_text:
         st.warning("Please log in first or something went wrong!")
