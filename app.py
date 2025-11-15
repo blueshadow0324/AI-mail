@@ -15,7 +15,6 @@ st.title("GBS AI")
 
 # ----------------- Config -----------------
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-MS_SCOPES = ["Mail.Read"]
 
 login_choice = st.radio("Login with:", ["Google", "Microsoft"])
 
@@ -85,18 +84,6 @@ if login_choice == "Google":
         )
     flow = st.session_state.google_flow
 
-# ----------------- Microsoft Device Code Flow -----------------
-if login_choice == "Microsoft":
-    CLIENT_ID = st.secrets["microsoft"]["client_id"]
-    AUTHORITY = "https://login.microsoftonline.com/common"
-
-    if st.session_state.msal_app is None:
-        st.session_state.msal_app = msal.PublicClientApplication(
-            client_id=CLIENT_ID,
-            authority=AUTHORITY
-        )
-    msal_app = st.session_state.msal_app
-
 # ----------------- Show Login Buttons -----------------
 if login_choice == "Google" and st.session_state.google_creds is None:
     auth_url, _ = flow.authorization_url(
@@ -106,23 +93,6 @@ if login_choice == "Google" and st.session_state.google_creds is None:
         state="google"
     )
     st.markdown(f"[Login with Google]({auth_url})")
-
-elif login_choice == "Microsoft" and st.session_state.ms_token is None:
-    device_flow = msal_app.initiate_device_flow(scopes=MS_SCOPES)
-    if "user_code" not in device_flow:
-        st.error("Failed to initiate Microsoft device flow.")
-    else:
-        st.write("Go to [https://microsoft.com/devicelogin](https://microsoft.com/devicelogin) and enter code:")
-        st.code(device_flow["user_code"], language="text")
-        st.write("Waiting for authentication...")
-
-        # Poll for token
-        token_result = msal_app.acquire_token_by_device_flow(device_flow)
-        if "access_token" in token_result:
-            st.session_state.ms_token = token_result["access_token"]
-            st.success("Microsoft login successful!")
-        else:
-            st.error(f"Microsoft login failed: {token_result.get('error_description')}")
 
 # ----------------- Email Fetching -----------------
 def get_google_emails(max_results=10):
@@ -137,19 +107,6 @@ def get_google_emails(max_results=10):
         emails_text += f"{i}. {snippet}\n"
     return emails_text
 
-def get_microsoft_emails(max_results=10):
-    token = st.session_state.get("ms_token")
-    if not token:
-        return None
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://graph.microsoft.com/v1.0/me/messages?$top={max_results}&$select=subject,bodyPreview"
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        st.error(f"Microsoft Graph error ({response.status_code}): {response.text}")
-        return None
-    data = response.json()
-    emails = [m.get("bodyPreview", "") for m in data.get("value", [])]
-    return "\n".join(emails)
 
 # ----------------- UI: Fetch & Summarize -----------------
 max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
@@ -163,9 +120,6 @@ if st.button("Fetch & Generate Summary"):
             creds.refresh(Request())
         if creds.valid:
             emails_text = get_google_emails(max_results=max_emails)
-
-    elif login_choice == "Microsoft" and st.session_state.get("ms_token"):
-        emails_text = get_microsoft_emails(max_results=max_emails)
 
     if not emails_text:
         st.warning("Please log in first or something went wrong!")
