@@ -109,16 +109,42 @@ def get_google_emails(max_results=10):
     return emails_text
 
 
+from datetime import datetime, timedelta
+from googleapiclient.discovery import build
+import streamlit as st
+
+# Check if logged in
 if st.session_state.get("google_creds"):
     t = st.text("Loading...")
+
+    # Gmail service
+    service = build("gmail", "v1", credentials=st.session_state.google_creds)
+
+    # Today and tomorrow for Gmail search
     today = datetime.utcnow().strftime("%Y/%m/%d")
     tomorrow = (datetime.utcnow() + timedelta(days=1)).strftime("%Y/%m/%d")
 
-    todays_emails = results = service.users().messages().list(
+    # Fetch messages from today
+    results = service.users().messages().list(
         userId='me',
         q=f"after:{today} before:{tomorrow}"
     ).execute()
 
     messages = results.get("messages", [])
-    st.text(generate_bullet_summary(messages))
-    t = st.empty()
+
+    # Fetch snippets
+    email_texts = []
+    for msg in messages:
+        msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
+        snippet = msg_data.get("snippet", "")
+        email_texts.append(snippet)
+
+    # Join all snippets into one text
+    all_text = "\n".join(email_texts)
+
+    # Generate bullet summary (your function)
+    summary = generate_bullet_summary(all_text)
+
+    t.empty()  # remove loading text
+    st.subheader("Today's Email Summary")
+    st.text_area("Summary", value=summary, height=300)
