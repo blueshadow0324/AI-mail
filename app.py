@@ -109,26 +109,6 @@ def get_google_emails(max_results=10):
     return emails_text
 
 
-# ----------------- UI: Fetch & Summarize -----------------
-max_emails = st.slider("Number of latest emails to fetch:", 1, 50, 10)
-
-if st.button("Fetch & Generate Summary"):
-    emails_text = None
-
-    if login_choice == "Google" and st.session_state.get("google_creds"):
-        creds = st.session_state.google_creds
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        if creds.valid:
-            emails_text = get_google_emails(max_results=max_emails)
-
-    if not emails_text:
-        st.warning("Please log in first or something went wrong!")
-        st.stop()
-
-    st.subheader("Important Highlights:")
-    st.text(generate_bullet_summary(emails_text))
-
 if st.session_state.get("google_creds"):
     t = st.text("Loading...")
     today = datetime.utcnow().strftime("%Y/%m/%d")
