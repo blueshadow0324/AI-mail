@@ -2,7 +2,7 @@ import streamlit as st
 import re
 import html
 import requests
-import timedelta
+from datetime import datetime, timedelta
 from transformers import pipeline
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
