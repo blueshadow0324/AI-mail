@@ -1,6 +1,4 @@
 import datetime
-
-import service
 import streamlit as st
 import re
 import html
