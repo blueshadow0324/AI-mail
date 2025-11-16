@@ -16,7 +16,7 @@ st.title("GBS AI")
 # ----------------- Config -----------------
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-login_choice = st.radio("Login with:", ["Google", "Microsoft"])
+login_choice = st.radio("Login with:", ["Google"])
 
 # ----------------- Session Initialization -----------------
 if "google_creds" not in st.session_state:
