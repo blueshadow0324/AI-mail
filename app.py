@@ -127,7 +127,8 @@ if st.session_state.get("google_creds"):
     # Fetch messages from today
     results = service.users().messages().list(
         userId='me',
-        q=f"after:{today} before:{tomorrow}"
+        q="newer_than:7d"
+
     ).execute()
 
     messages = results.get("messages", [])
