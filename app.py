@@ -1,7 +1,11 @@
+import datetime
+
+import service
 import streamlit as st
 import re
 import html
 import requests
+import timedelta
 from transformers import pipeline
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import Flow
@@ -127,3 +131,17 @@ if st.button("Fetch & Generate Summary"):
 
     st.subheader("Important Highlights:")
     st.text(generate_bullet_summary(emails_text))
+
+if st.session_state.get("google_creds"):
+    t = st.text("Loading...")
+    today = datetime.utcnow().strftime("%Y/%m/%d")
+    tomorrow = (datetime.utcnow() + timedelta(days=1)).strftime("%Y/%m/%d")
+
+    todays_emails = results = service.users().messages().list(
+        userId='me',
+        q=f"after:{today} before:{tomorrow}"
+    ).execute()
+
+    messages = results.get("messages", [])
+    st.text(generate_bullet_summary(messages))
+    t = st.empty()
